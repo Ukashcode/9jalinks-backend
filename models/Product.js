@@ -1,14 +1,25 @@
-import express from 'express';
-import { addProduct, listProducts, getProduct, myProducts, deleteProduct } from '../controllers/productController.js';
-import { protect } from '../middleware/authMiddleware.js';
-import upload from '../middleware/upload.js';
+import mongoose from 'mongoose';
 
-const router = express.Router();
+const productSchema = new mongoose.Schema({
+  seller: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'User',
+    required: true
+  },
+  title: { type: String, required: true },
+  description: { type: String, required: true },
+  price: { type: Number, required: true },
+  category: { type: String, required: true },
+  condition: { type: String, default: 'Used' },
+  location: { type: String },
+  images: [
+    {
+      url: { type: String },
+      public_id: { type: String }
+    }
+  ],
+  views: { type: Number, default: 0 },
+  createdAt: { type: Date, default: Date.now }
+});
 
-router.get('/', listProducts);
-router.get('/:id', getProduct);
-router.post('/', protect, upload.array('images', 6), addProduct);
-router.get('/my-products', protect, myProducts);
-router.delete('/:id', protect, deleteProduct);
-
-export default router;
+export default mongoose.model('Product', productSchema);

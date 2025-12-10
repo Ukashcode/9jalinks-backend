@@ -1,5 +1,5 @@
 import asyncHandler from 'express-async-handler';
-import Product from '../models/Product.js';
+import Product from '../models/Product.js'; // ✅ FIXED: No curly braces
 import { v2 as cloudinary } from 'cloudinary';
 import streamifier from 'streamifier';
 
@@ -19,7 +19,7 @@ function uploadBuffer(buffer) {
   });
 }
 
-// POST /api/products (protected)
+// POST /api/products
 export const addProduct = asyncHandler(async (req, res) => {
   const { title, description, price, category, condition, location } = req.body;
   if (!title || !category) return res.status(400).json({ message: 'Title and category required' });
@@ -51,7 +51,8 @@ export const listProducts = asyncHandler(async (req, res) => {
   const { q, category } = req.query;
   const filter = {};
   if (q) filter.title = { $regex: q, $options: 'i' };
-  if (category) filter.category = category;
+  if (category && category !== 'All') filter.category = category;
+  
   const products = await Product.find(filter).populate('seller', 'name store social');
   res.json(products);
 });
@@ -60,6 +61,7 @@ export const listProducts = asyncHandler(async (req, res) => {
 export const getProduct = asyncHandler(async (req, res) => {
   const product = await Product.findById(req.params.id).populate('seller', 'name store social');
   if (!product) return res.status(404).json({ message: 'Product not found' });
+  
   product.views = (product.views || 0) + 1;
   await product.save();
   res.json(product);
@@ -74,9 +76,15 @@ export const myProducts = asyncHandler(async (req, res) => {
 // DELETE /api/products/:id
 export const deleteProduct = asyncHandler(async (req, res) => {
   const product = await Product.findById(req.params.id);
+  
   if (!product) return res.status(404).json({ message: 'Not found' });
-  if (product.seller.toString() !== req.user._id.toString()) return res.status(403).json({ message: 'Not allowed' });
-  // optionally delete images from Cloudinary here
-  await product.remove();
+  
+  if (product.seller.toString() !== req.user._id.toString()) {
+    return res.status(403).json({ message: 'Not allowed' });
+  }
+
+  // ✅ FIXED: .remove() is deprecated. Using deleteOne()
+  await Product.deleteOne({ _id: req.params.id }); 
+  
   res.json({ message: 'Deleted' });
 });
