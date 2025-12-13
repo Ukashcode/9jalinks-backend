@@ -7,12 +7,12 @@ import jwt from 'jsonwebtoken';
 
 // POST /api/auth/signup
 export const signup = asyncHandler(async (req, res) => {
-  console.log("📝 Signup started for:", req.body.email); // Debug log
+  console.log("📝 Signup request received for:", req.body.email);
 
   const { name, email, password, role } = req.body;
 
-  if (!name || !email) {
-    return res.status(400).json({ message: 'Name and email required' });
+  if (!name || !email || !password) {
+    return res.status(400).json({ message: 'Name, email, and password are required' });
   }
 
   // Check if user exists
@@ -21,54 +21,66 @@ export const signup = asyncHandler(async (req, res) => {
     return res.status(400).json({ message: 'User already exists' });
   }
 
-  // 1. Fix the Salt Error: Use 10 directly
-  // 2. Ensure password is a string before hashing
-  let passwordHash = null;
-  if (password) {
-    passwordHash = await bcrypt.hash(password.toString(), 10);
-  }
+  // 1. Hash Password (Securely using 10 rounds)
+  const passwordHash = await bcrypt.hash(password.toString(), 10);
 
-  // 3. Fix the Role Error: Force uppercase to match your Schema ('BUYER'/'SELLER')
+  // 2. Handle Role (Ensure Uppercase to match Schema)
   const validRole = role ? role.toUpperCase() : 'BUYER';
 
+  // 3. Generate OTP
   const otp = generateOTP();
-  const otpExpiry = new Date(Date.now() + 10 * 60 * 1000); // 10 mins
+  const otpExpiry = new Date(Date.now() + 10 * 60 * 1000); // 10 mins expiry
 
-  // Create User
+  // 4. Create User
   const user = await User.create({
     name,
     email,
-    passwordHash,
+    passwordHash, // Saving to passwordHash field
     role: validRole, 
-    otp: { code: otp, expiresAt: otpExpiry }
+    otp: { code: otp, expiresAt: otpExpiry },
+    isVerified: false
   });
 
+  // 5. Send Email
   try {
     await sendOTPEmail(email, otp);
+    console.log(`✅ OTP sent to ${email}`);
   } catch (err) {
     console.error('⚠️ OTP email failed:', err.message);
-    // We don't stop the process; user is created, they can resend OTP later
+    // User is created, so we don't fail the request, but we log the error
   }
 
-  res.status(201).json({ message: 'User created. OTP sent if email configured' });
+  res.status(201).json({ message: 'User created. Please verify your OTP.' });
 });
 
 // POST /api/auth/verify-otp
 export const verifyOtp = asyncHandler(async (req, res) => {
   const { email, code } = req.body;
-  if (!email || !code) return res.status(400).json({ message: 'Email and code required' });
-
-  const user = await User.findOne({ email });
-  if (!user) return res.status(400).json({ message: 'Invalid email' });
-
-  if (!user.otp || user.otp.code !== code || user.otp.expiresAt < new Date()) {
-    return res.status(400).json({ message: 'Invalid or expired OTP' });
+  
+  if (!email || !code) {
+    return res.status(400).json({ message: 'Email and code required' });
   }
 
+  const user = await User.findOne({ email });
+  if (!user) {
+    return res.status(400).json({ message: 'Invalid email' });
+  }
+
+  // Check OTP validity
+  if (!user.otp || user.otp.code !== code) {
+    return res.status(400).json({ message: 'Invalid OTP code' });
+  }
+  
+  if (user.otp.expiresAt < new Date()) {
+    return res.status(400).json({ message: 'OTP has expired' });
+  }
+
+  // Verify User
   user.isVerified = true;
-  user.otp = undefined;
+  user.otp = undefined; // Clear OTP after usage
   await user.save();
 
+  // Generate Token
   const token = jwt.sign({ id: user._id }, process.env.JWT_SECRET, { expiresIn: '30d' });
   
   res.json({ 
@@ -85,7 +97,8 @@ export const login = asyncHandler(async (req, res) => {
   const user = await User.findOne({ email });
   if (!user) return res.status(400).json({ message: 'Invalid credentials' });
 
-  if (!user.passwordHash) return res.status(400).json({ message: 'Use social login' });
+  // Safety check if user was created without password (social login)
+  if (!user.passwordHash) return res.status(400).json({ message: 'Use social login or reset password' });
 
   const match = await bcrypt.compare(password, user.passwordHash);
   if (!match) return res.status(400).json({ message: 'Invalid credentials' });
