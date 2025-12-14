@@ -1,35 +1,22 @@
 import nodemailer from 'nodemailer';
+import sgTransport from 'nodemailer-sendgrid-transport';
 
 export const sendOTPEmail = async (email, otp) => {
-  console.log(`📧 Preparing to send email to: ${email}`);
+  console.log(`📧 Preparing to send email via SendGrid to: ${email}`);
   
-  // Debug: Print settings (hiding password)
-  console.log(`🔧 SMTP Config -> Host: ${process.env.EMAIL_HOST}, Port: ${process.env.EMAIL_PORT}, User: ${process.env.EMAIL_USER}`);
-
-  const transporter = nodemailer.createTransport({
-    host: process.env.EMAIL_HOST || 'smtp.gmail.com',
-    port: Number(process.env.EMAIL_PORT) || 587,
-    // Logic: True for 465, False for other ports
-    secure: Number(process.env.EMAIL_PORT) === 465, 
+  // 1. Configure SendGrid Transport
+  const options = {
     auth: {
-      user: process.env.EMAIL_USER,
-      pass: process.env.EMAIL_PASS
-    },
-    // Fix for some cloud servers blocking TLS
-    tls: {
-      ciphers: "SSLv3",
-      rejectUnauthorized: false
+      api_key: process.env.SENDGRID_API_KEY
     }
-  });
+  };
+
+  const transporter = nodemailer.createTransport(sgTransport(options));
 
   try {
-    // 1. Verify connection
-    await transporter.verify();
-    console.log("✅ SMTP Connection Verified!");
-
-    // 2. Send Email
+    // 2. Send the Email
     await transporter.sendMail({
-      from: `"9jalinks Support" <${process.env.EMAIL_USER}>`,
+      from: `9jalinks Support <${process.env.SENDGRID_FROM_EMAIL}>`, // Use a verified sender email
       to: email,
       subject: 'Your 9jalinks Verification Code',
       html: `
@@ -37,13 +24,12 @@ export const sendOTPEmail = async (email, otp) => {
           <h2 style="color: #008751;">Welcome to 9jalinks!</h2>
           <p>Your verification code is:</p>
           <h1 style="background: #e6f4ea; display: inline-block; padding: 10px 20px; color: #008751; letter-spacing: 5px;">${otp}</h1>
-          <p>This code expires in 10 minutes.</p>
         </div>
       `
     });
-    console.log("🚀 Email Sent Successfully!");
+    console.log("🚀 Email Sent Successfully via SendGrid!");
 
   } catch (error) {
-    console.error("❌ EMAIL FAILED:", error);
+    console.error("❌ SENDGRID FAILED:", error);
   }
 };
